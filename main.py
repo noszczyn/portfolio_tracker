@@ -7,6 +7,7 @@ from typing import List
 
 # Importy Twoich plików
 from models.portfolio import Portfolio
+from models.transaction import Transaction
 from database import SessionLocal, engine, get_db
 from models.user import User
 import schemas
@@ -124,3 +125,56 @@ def delete_portfolio(
     db.commit()
     return None
 
+# POST /transactions — dodaj transakcję
+@app.post("/transactions", response_model=schemas.TransactionResponse, status_code=status.HTTP_201_CREATED)
+def create_transaction(
+    transaction: schemas.TransactionCreate,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
+    portfolio = db.query(Portfolio).filter(
+        Portfolio.id == transaction.portfolio_id,
+        Portfolio.user_id == current_user.id
+    ).first()
+    if not portfolio:
+        raise HTTPException(status_code=403, detail="Not your portfolio")
+
+    new_transaction = Transaction(**transaction.model_dump())
+    db.add(new_transaction)
+    db.commit()
+    db.refresh(new_transaction)
+    return new_transaction
+
+# GET /transactions?portfolio_id=X — lista transakcji
+@app.get("/transactions", response_model=List[schemas.TransactionResponse])
+def get_transactions(
+    portfolio_id: int,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
+    portfolio = db.query(Portfolio).filter(
+        Portfolio.id == portfolio_id,
+        Portfolio.user_id == current_user.id
+    ).first()
+    if not portfolio:
+        raise HTTPException(status_code=403, detail="Not your portfolio")
+
+    return db.query(Transaction).filter(Transaction.portfolio_id == portfolio_id).all()
+
+# DELETE /transactions/{id} — usuń transakcję
+@app.delete("/transactions/{transaction_id}", status_code=status.HTTP_204_NO_CONTENT)
+def delete_transaction(
+    transaction_id: int,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
+    transaction = db.query(Transaction).join(Portfolio).filter(
+        Transaction.id == transaction_id,
+        Portfolio.user_id == current_user.id
+    ).first()
+    if not transaction:
+        raise HTTPException(status_code=404, detail="Transaction not found or not owned by you")
+
+    db.delete(transaction)
+    db.commit()
+    return None

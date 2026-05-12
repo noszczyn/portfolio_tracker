@@ -1,4 +1,5 @@
 from pydantic import BaseModel, EmailStr
+from datetime import datetime
 
 # Schemat dla danych przychodzących podczas rejestracji
 class UserCreate(BaseModel):
@@ -31,6 +32,30 @@ class PortfolioResponse(BaseModel):
     name: str
     currency: str
     user_id: int
+
+    class Config:
+        from_attributes = True
+
+class TransactionCreate(BaseModel):
+    portfolio_id: int
+    ticker: str
+    type: str
+    quantity: float
+    price: float
+    currency: str = "PLN"
+    commission: float = 0.0
+    executed_at: datetime
+
+class TransactionResponse(BaseModel):
+    id: int
+    portfolio_id: int
+    ticker: str
+    type: str
+    quantity: float
+    price: float
+    currency: str
+    commission: float
+    executed_at: datetime
 
     class Config:
         from_attributes = True
