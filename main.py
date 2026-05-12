@@ -9,6 +9,8 @@ from typing import List
 from models.portfolio import Portfolio
 from models.transaction import Transaction
 from price_fetcher import fetch_prices
+from portfolio_value import get_portfolio_value_history
+from datetime import date
 from database import SessionLocal, engine, get_db
 from models.user import User
 import schemas
@@ -191,3 +193,20 @@ def get_prices(
     if not prices:
         raise HTTPException(status_code=404, detail="No data found for this ticker")
     return prices
+
+@app.get("/portfolios/{portfolio_id}/chart")
+def get_portfolio_chart(
+    portfolio_id: int,
+    date_from: date,
+    date_to: date,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
+    portfolio = db.query(Portfolio).filter(
+        Portfolio.id == portfolio_id,
+        Portfolio.user_id == current_user.id
+    ).first()
+    if not portfolio:
+        raise HTTPException(status_code=403, detail="Not your portfolio")
+
+    return get_portfolio_value_history(portfolio_id, date_from, date_to, db)
