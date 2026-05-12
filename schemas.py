@@ -59,3 +59,11 @@ class TransactionResponse(BaseModel):
 
     class Config:
         from_attributes = True
+
+class PriceResponse(BaseModel):
+    date: str
+    open: float
+    high: float
+    low: float
+    close: float
+    volume: int

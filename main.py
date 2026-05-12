@@ -8,6 +8,7 @@ from typing import List
 # Importy Twoich plików
 from models.portfolio import Portfolio
 from models.transaction import Transaction
+from price_fetcher import fetch_prices
 from database import SessionLocal, engine, get_db
 from models.user import User
 import schemas
@@ -178,3 +179,15 @@ def delete_transaction(
     db.delete(transaction)
     db.commit()
     return None
+
+@app.get("/prices/{ticker}", response_model=List[schemas.PriceResponse])
+def get_prices(
+    ticker: str,
+    date_from: str,
+    date_to: str,
+    current_user: User = Depends(get_current_user)
+):
+    prices = fetch_prices(ticker, date_from, date_to)
+    if not prices:
+        raise HTTPException(status_code=404, detail="No data found for this ticker")
+    return prices
