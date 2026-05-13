@@ -13,10 +13,18 @@ from portfolio_value import get_portfolio_value_history
 from datetime import date
 from database import SessionLocal, engine, get_db
 from models.user import User
+from fastapi.middleware.cors import CORSMiddleware
 import schemas
 import auth
 
 app = FastAPI(title="Portfolio Tracker", version="0.1.0")
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["http://localhost:5173"],
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
 oauth2_scheme = OAuth2PasswordBearer(tokenUrl="login")
 
 

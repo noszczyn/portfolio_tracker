@@ -2,8 +2,12 @@ from datetime import datetime, timedelta
 import bcrypt
 from jose import jwt
 
-# Konfiguracja
-SECRET_KEY = "twoj_bardzo_tajny_klucz_zmien_mnie_pozniej"
+from dotenv import load_dotenv
+import os
+load_dotenv()
+SECRET_KEY = os.getenv("SECRET_KEY")
+DATABASE_URL = os.getenv("DATABASE_URL")
+
 ALGORITHM = "HS256"
 ACCESS_TOKEN_EXPIRE_MINUTES = 60
 

@@ -1,0 +1,259 @@
+<style>
+*{box-sizing:border-box;margin:0;padding:0}
+.plan{font-family:var(--font-sans);padding:1rem 0}
+.week-tabs{display:flex;gap:8px;margin-bottom:1.25rem;flex-wrap:wrap}
+.wtab{padding:6px 14px;border:0.5px solid var(--color-border-secondary);border-radius:var(--border-radius-md);font-size:13px;cursor:pointer;color:var(--color-text-secondary);background:var(--color-background-primary);transition:all .15s}
+.wtab.active{background:var(--color-background-info);color:var(--color-text-info);border-color:var(--color-border-info);font-weight:500}
+.week-label{font-size:12px;color:var(--color-text-secondary);margin-bottom:1rem;line-height:1.5}
+.days{display:flex;flex-direction:column;gap:8px}
+.day-card{border:0.5px solid var(--color-border-tertiary);border-radius:var(--border-radius-lg);background:var(--color-background-primary);overflow:hidden}
+.day-header{display:flex;align-items:center;gap:12px;padding:10px 14px;cursor:pointer;user-select:none}
+.day-header:hover{background:var(--color-background-secondary)}
+.day-num{width:28px;height:28px;border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:12px;font-weight:500;flex-shrink:0}
+.day-meta{flex:1}
+.day-title{font-size:14px;font-weight:500;color:var(--color-text-primary)}
+.day-sub{font-size:12px;color:var(--color-text-secondary);margin-top:1px}
+.day-chevron{font-size:16px;color:var(--color-text-tertiary);transition:transform .2s}
+.day-chevron.open{transform:rotate(180deg)}
+.day-body{padding:0 14px 12px 54px;display:none}
+.day-body.open{display:block}
+.tasks{list-style:none;margin-bottom:10px}
+.tasks li{font-size:13px;color:var(--color-text-secondary);padding:3px 0;display:flex;gap:8px;align-items:flex-start;line-height:1.5}
+.tasks li::before{content:"";width:4px;height:4px;border-radius:50%;background:var(--color-border-secondary);margin-top:7px;flex-shrink:0}
+.deliverable{font-size:12px;padding:6px 10px;border-radius:var(--border-radius-md);border-left:2px solid;margin-top:4px}
+.progress-bar{height:4px;border-radius:2px;background:var(--color-background-secondary);margin-bottom:1.25rem;overflow:hidden}
+.progress-fill{height:100%;border-radius:2px;transition:width .3s}
+.legend{display:flex;gap:16px;margin-bottom:1rem;flex-wrap:wrap}
+.leg{display:flex;align-items:center;gap:5px;font-size:12px;color:var(--color-text-secondary)}
+.leg-dot{width:8px;height:8px;border-radius:50%;flex-shrink:0}
+</style>
+
+<div class="plan">
+<h2 class="sr-only">Plan 4-tygodniowy budowy aplikacji portfolio inwestycyjnego</h2>
+
+<div class="legend">
+  <div class="leg"><div class="leg-dot" style="background:#185FA5"></div>Konfiguracja</div>
+  <div class="leg"><div class="leg-dot" style="background:#0F6E56"></div>Backend / API</div>
+  <div class="leg"><div class="leg-dot" style="background:#854F0B"></div>Dane / logika</div>
+  <div class="leg"><div class="leg-dot" style="background:#534AB7"></div>Frontend</div>
+  <div class="leg"><div class="leg-dot" style="background:#993C1D"></div>Deploy</div>
+</div>
+
+<div class="week-tabs">
+  <button class="wtab active" onclick="showWeek(0)">Tydzień 1 — Backend</button>
+  <button class="wtab" onclick="showWeek(1)">Tydzień 2 — Ceny i logika</button>
+  <button class="wtab" onclick="showWeek(2)">Tydzień 3 — Frontend</button>
+  <button class="wtab" onclick="showWeek(3)">Tydzień 4 — Import i deploy</button>
+</div>
+
+<div class="progress-bar"><div class="progress-fill" id="prog" style="width:25%;background:#185FA5"></div></div>
+<div class="week-label" id="wlabel">Cel: działające API z bazą danych, auth JWT i możliwością dodawania transakcji przez Swagger UI.</div>
+
+<div class="days" id="days-container"></div>
+</div>
+
+<script>
+const weeks = [
+  {
+    color:"#185FA5", bg:"var(--color-background-info)", bc:"var(--color-border-info)", tc:"var(--color-text-info)",
+    delBg:"#E6F1FB", delBc:"#185FA5", delTc:"#0C447C",
+    label:"Cel: działające API z bazą danych, auth JWT i możliwością dodawania transakcji przez Swagger UI.",
+    progress:"25%",
+    days:[
+      {name:"Pon", title:"Środowisko i hello world",sub:"Python venv, Docker, FastAPI",
+       tasks:["Zainstaluj Docker Desktop, stwórz folder projektu z venv",
+              "docker-compose.yml z PostgreSQL 16 — uruchom kontener",
+              "pip install fastapi uvicorn sqlalchemy alembic psycopg2-binary",
+              "Pierwszy endpoint GET / → {status: ok}, sprawdź Swagger UI na /docs"],
+       del:"Swagger UI działa pod localhost:8000/docs"},
+      {name:"Wt", title:"Modele i migracje",sub:"SQLAlchemy, Alembic",
+       tasks:["Napisz modele: User, Portfolio, Transaction w models/",
+              "alembic init alembic — skonfiguruj env.py z DATABASE_URL",
+              "alembic revision --autogenerate -m 'init', alembic upgrade head",
+              "Sprawdź w psql że tabele istnieją"],
+       del:"Trzy tabele w bazie, migracje działają"},
+      {name:"Śr", title:"Rejestracja i logowanie",sub:"JWT, bcrypt, python-jose",
+       tasks:["pip install python-jose[cryptography] passlib[bcrypt]",
+              "POST /auth/register — hash hasła przez bcrypt, zapis do DB",
+              "POST /auth/login — weryfikacja hasła, zwrot JWT tokenu",
+              "Dependency get_current_user — dekoduje JWT z nagłówka Authorization"],
+       del:"Możesz się zarejestrować i zalogować przez Swagger"},
+      {name:"Czw", title:"CRUD portfeli",sub:"Endpointy, autoryzacja",
+       tasks:["GET /portfolios — lista portfeli zalogowanego usera",
+              "POST /portfolios — utwórz portfel (name, currency)",
+              "DELETE /portfolios/{id} — sprawdź czy portfel należy do usera",
+              "Przetestuj wszystkie endpointy przez Swagger z tokenem JWT"],
+       del:"Możesz tworzyć i usuwać portfele"},
+      {name:"Pt", title:"CRUD transakcji",sub:"Walidacja Pydantic",
+       tasks:["POST /transactions — dodaj transakcję (BUY/SELL/DIVIDEND, ticker, quantity, price, date)",
+              "GET /transactions?portfolio_id=1 — lista transakcji z filtrami",
+              "DELETE /transactions/{id}",
+              "Walidacja: quantity > 0, price > 0, type w enum"],
+       del:"Pełne API — możesz ręcznie budować portfel przez Swagger"}
+    ]
+  },
+  {
+    color:"#0F6E56", bg:"var(--color-background-success)", bc:"var(--color-border-success)", tc:"var(--color-text-success)",
+    delBg:"#E1F5EE", delBc:"#0F6E56", delTc:"#085041",
+    label:"Cel: aplikacja pobiera kursy akcji z GPW i giełd zagranicznych, liczy historyczną wartość portfela.",
+    progress:"50%",
+    days:[
+      {name:"Pon", title:"Integracja yfinance",sub:"Kursy akcji, GPW",
+       tasks:["pip install yfinance pandas",
+              "Funkcja fetch_ohlcv(ticker, start, end) → DataFrame",
+              "Przetestuj: PKN.WA (GPW), AAPL (NASDAQ), BTC-USD (krypto)",
+              "Endpoint GET /prices/{ticker}?from=...&to=... — zwraca JSON"],
+       del:"Możesz pobrać historyczne kursy PKN.WA"},
+      {name:"Wt", title:"Cache cen i scheduler",sub:"APScheduler, tabela prices",
+       tasks:["pip install apscheduler",
+              "Przy GET /prices — najpierw sprawdź cache w tabeli prices (DB), pobierz tylko brakujące dni",
+              "Job co 60 minut: odśwież ceny wszystkich tickerów z aktywnych transakcji",
+              "Scheduler startuje razem z FastAPI (lifespan event)"],
+       del:"Ceny są w bazie, request nie bije w yfinance przy każdym wywołaniu"},
+      {name:"Śr", title:"Kursy walut",sub:"USDPLN, EURPLN",
+       tasks:["Pobierz kursy przez yfinance: USDPLN=X, EURPLN=X, GBPPLN=X",
+              "Osobna tabela lub dodaj currency_pair do prices",
+              "Funkcja get_pln_rate(currency, date) → float",
+              "Przetestuj: wartość pozycji AAPL × kurs USDPLN z danego dnia"],
+       del:"Aplikacja umie przeliczać każdą walutę na PLN po historycznym kursie"},
+      {name:"Czw", title:"Logika wartości portfela",sub:"Pozycje, stan na dany dzień",
+       tasks:["Funkcja get_positions(portfolio_id, date) → {ticker: quantity}",
+              "— przejdź przez transakcje do dnia d, BUY +quantity, SELL -quantity",
+              "Funkcja portfolio_value(portfolio_id, date) → PLN",
+              "— dla każdego tickera: quantity × close_price × pln_rate"],
+       del:"Możesz zapytać: ile wart był portfel 3 miesiące temu?"},
+      {name:"Pt", title:"Endpoint wykresu",sub:"/chart, snapshot",
+       tasks:["GET /portfolios/{id}/chart?from=...&to=... → [{date, value, invested}]",
+              "invested = suma wpłat gotówkowych (DEPOSIT) do dnia d",
+              "Opcjonalnie: zapisuj snapshoty do portfolio_snapshots co wieczór (cron)",
+              "Przetestuj w Swagger — zwróć co najmniej 30 dni danych"],
+       del:"Endpoint zwraca dane gotowe pod wykres"}
+    ]
+  },
+  {
+    color:"#534AB7", bg:"var(--color-background-secondary)", bc:"var(--color-border-secondary)", tc:"var(--color-text-primary)",
+    delBg:"#EEEDFE", delBc:"#534AB7", delTc:"#3C3489",
+    label:"Cel: działający frontend w React — wykres portfela, lista transakcji, widok składu.",
+    progress:"75%",
+    days:[
+      {name:"Pon", title:"Setup React i auth",sub:"Vite, Axios, React Router",
+       tasks:["npm create vite@latest frontend -- --template react",
+              "npm install recharts axios react-router-dom",
+              "Strony: /login, /register — formularze, POST do API, zapis JWT w localStorage",
+              "Axios interceptor — dodaje Authorization: Bearer {token} do każdego requestu"],
+       del:"Możesz się zalogować przez aplikację webową"},
+      {name:"Wt", title:"Lista transakcji",sub:"Tabela, sortowanie",
+       tasks:["GET /transactions?portfolio_id=1 — pobierz i wyświetl tabelę",
+              "Kolumny: data, ticker, typ, ilość, cena, waluta",
+              "Przycisk Dodaj transakcję — prosty formularz modal",
+              "Loading state + obsługa błędów (401 → redirect do login)"],
+       del:"Widzisz swoje transakcje w przeglądarce"},
+      {name:"Śr", title:"Wykres portfela",sub:"Recharts LineChart",
+       tasks:["GET /portfolios/{id}/chart — pobierz dane",
+              "LineChart: linia wartości portfela + linia wpłacone (dashed)",
+              "XAxis: daty, YAxis: PLN z formatowaniem (toLocaleString)",
+              "Tooltip pokazujący wartość i zysk/stratę w PLN i %"],
+       del:"Główny wykres działa — widzisz jak rósł portfel"},
+      {name:"Czw", title:"Widok składu portfela",sub:"PieChart, tabela pozycji",
+       tasks:["Endpoint GET /portfolios/{id}/positions — zwraca aktualne pozycje",
+              "PieChart z Recharts — procentowy podział tickerów",
+              "Tabela: ticker, ilość, aktualna cena, wartość PLN, zysk/strata %",
+              "Karta z metrykami: łączna wartość, wpłacono, zysk PLN, zysk %"],
+       del:"Strona portfolio wygląda jak prawdziwa aplikacja"},
+      {name:"Pt", title:"Szlif UI",sub:"Loading, błędy, wygląd",
+       tasks:["Skeleton loading zamiast pustego ekranu podczas ładowania danych",
+              "Obsługa pustego portfela (zero transakcji) — ekran onboarding",
+              "Podstawowa responsywność (żeby działało na laptopie i telefonie)",
+              "Navbar z nawigacją, przycisk wylogowania"],
+       del:"Aplikacja wygląda schludnie, nie krashuje na edge cases"}
+    ]
+  },
+  {
+    color:"#993C1D", bg:"var(--color-background-warning)", bc:"var(--color-border-warning)", tc:"var(--color-text-warning)",
+    delBg:"#FAECE7", delBc:"#993C1D", delTc:"#712B13",
+    label:"Cel: import CSV z brokera działa, aplikacja wdrożona publicznie z linkiem do CV.",
+    progress:"100%",
+    days:[
+      {name:"Pon", title:"Parser CSV XTB",sub:"Pandas, mapowanie kolumn",
+       tasks:["Pobierz przykładowy eksport CSV z XTB (Historia transakcji)",
+              "pip install pandas openpyxl",
+              "Klasa XTBImporter: wczytaj CSV, zmapuj kolumny na TransactionCreate",
+              "Obsługa edge casów: dywidendy, splity, różne kodowania (UTF-8 BOM)"],
+       del:"Możesz wczytać swój własny plik CSV z XTB"},
+      {name:"Wt", title:"Endpoint importu i UI",sub:"Upload pliku, deduplikacja",
+       tasks:["POST /transactions/import — multipart/form-data, parametr broker=xtb",
+              "Deduplikacja: sprawdź czy transakcja (ticker+date+quantity) już istnieje",
+              "Frontend: przycisk Import CSV, file input, wybór brokera, progress",
+              "Pokaż ile transakcji zaimportowano, ile pominięto jako duplikaty"],
+       del:"Możesz zaimportować historię zleceń jednym kliknięciem"},
+      {name:"Śr", title:"Docker Compose",sub:"Produkcyjny stack",
+       tasks:["docker-compose.yml: serwis backend (Dockerfile) + serwis db (postgres:16)",
+              "Dockerfile dla FastAPI: python:3.12-slim, COPY, pip install, CMD uvicorn",
+              "Zmienne środowiskowe przez .env (DATABASE_URL, SECRET_KEY, nie commituj!)",
+              "docker compose up --build — wszystko startuje jedną komendą"],
+       del:"Cały backend + baza działa w Dockerze"},
+      {name:"Czw", title:"Deploy",sub:"Railway, Vercel, CORS",
+       tasks:["Railway: utwórz projekt, dodaj PostgreSQL plugin, wgraj backend z GitHub",
+              "Ustaw zmienne środowiskowe w Railway dashboard",
+              "Vercel: import repo frontend, ustaw VITE_API_URL na URL z Railway",
+              "CORS w FastAPI: allow_origins z domeną Vercel"],
+       del:"Aplikacja działa pod publicznym URL — link do wklejenia w CV"},
+      {name:"Pt", title:"README i GitHub",sub:"Dokumentacja, portfolio",
+       tasks:["README.md: opis projektu, screenshot wykresu, stack, jak uruchomić lokalnie",
+              "Sekcja Architecture w README — krótki opis warstw (link do diagramu)",
+              "Upewnij się że .env i klucze NIE są w repozytorium (.gitignore)",
+              "Ewentualnie: dodaj demo konto (login/hasło w README) dla rekruterów"],
+       del:"Publiczne repo gotowe do pokazania na rozmowie kwalifikacyjnej"}
+    ]
+  }
+];
+
+let currentWeek = 0;
+let openDay = -1;
+
+function showWeek(w){
+  currentWeek = w;
+  openDay = -1;
+  document.querySelectorAll('.wtab').forEach((t,i)=>t.classList.toggle('active',i===w));
+  const wk = weeks[w];
+  document.getElementById('wlabel').textContent = wk.label;
+  document.getElementById('prog').style.width = wk.progress;
+  document.getElementById('prog').style.background = wk.color;
+  renderDays();
+}
+
+function renderDays(){
+  const wk = weeks[currentWeek];
+  const container = document.getElementById('days-container');
+  container.innerHTML = '';
+  wk.days.forEach((d,i)=>{
+    const isOpen = openDay === i;
+    const card = document.createElement('div');
+    card.className = 'day-card';
+    const dayNum = i+1 + currentWeek*5;
+    card.innerHTML = `
+      <div class="day-header" onclick="toggleDay(${i})">
+        <div class="day-num" style="background:${wk.delBg};color:${wk.color};border:0.5px solid ${wk.delBc}">D${dayNum}</div>
+        <div class="day-meta">
+          <div class="day-title">${d.name} — ${d.title}</div>
+          <div class="day-sub">${d.sub}</div>
+        </div>
+        <i class="ti ti-chevron-down day-chevron${isOpen?' open':''}" aria-hidden="true"></i>
+      </div>
+      <div class="day-body${isOpen?' open':''}">
+        <ul class="tasks">${d.tasks.map(t=>`<li>${t}</li>`).join('')}</ul>
+        <div class="deliverable" style="background:${wk.delBg};border-color:${wk.delBc};color:${wk.delTc}">
+          <strong>Na koniec dnia:</strong> ${d.del}
+        </div>
+      </div>`;
+    container.appendChild(card);
+  });
+}
+
+function toggleDay(i){
+  openDay = openDay===i ? -1 : i;
+  renderDays();
+}
+
+renderDays();
+</script>
