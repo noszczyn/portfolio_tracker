@@ -1,7 +1,6 @@
 from fastapi import FastAPI, Depends, HTTPException, status
 from fastapi.security import OAuth2PasswordBearer, OAuth2PasswordRequestForm
 from sqlalchemy.orm import Session
-from sqlalchemy import text # Dodane dla db-check
 from jose import JWTError, jwt
 from typing import List
 
@@ -11,7 +10,7 @@ from models.transaction import Transaction
 from price_fetcher import fetch_prices
 from portfolio_value import get_portfolio_value_history
 from datetime import date
-from database import SessionLocal, engine, get_db
+from database import get_db
 from models.user import User
 from fastapi.middleware.cors import CORSMiddleware
 import schemas
