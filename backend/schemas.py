@@ -1,5 +1,6 @@
-from pydantic import BaseModel, EmailStr
+from pydantic import BaseModel, EmailStr, Field
 from datetime import datetime
+from typing import Literal
 
 # Schemat dla danych przychodzących podczas rejestracji
 class UserCreate(BaseModel):
@@ -39,11 +40,11 @@ class PortfolioResponse(BaseModel):
 class TransactionCreate(BaseModel):
     portfolio_id: int
     ticker: str
-    type: str
-    quantity: float
-    price: float
+    type: Literal["BUY", "SELL"]
+    quantity: float = Field(gt=0)
+    price: float = Field(gt=0)
     currency: str = "PLN"
-    commission: float = 0.0
+    commission: float = Field(default=0.0, ge=0)
     executed_at: datetime
 
 class TransactionResponse(BaseModel):
@@ -67,3 +68,8 @@ class PriceResponse(BaseModel):
     low: float
     close: float
     volume: int
+
+
+class PortfolioChartPoint(BaseModel):
+    date: str
+    value: float

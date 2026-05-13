@@ -171,6 +171,24 @@ def get_transactions(
 
     return db.query(Transaction).filter(Transaction.portfolio_id == portfolio_id).all()
 
+
+@app.get("/portfolios/{portfolio_id}/history", response_model=List[schemas.TransactionResponse])
+def get_portfolio_history(
+    portfolio_id: int,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
+    portfolio = db.query(Portfolio).filter(
+        Portfolio.id == portfolio_id,
+        Portfolio.user_id == current_user.id
+    ).first()
+    if not portfolio:
+        raise HTTPException(status_code=403, detail="Not your portfolio")
+
+    return db.query(Transaction).filter(
+        Transaction.portfolio_id == portfolio_id
+    ).order_by(Transaction.executed_at.desc()).all()
+
 # DELETE /transactions/{id} — usuń transakcję
 @app.delete("/transactions/{transaction_id}", status_code=status.HTTP_204_NO_CONTENT)
 def delete_transaction(
@@ -201,7 +219,7 @@ def get_prices(
         raise HTTPException(status_code=404, detail="No data found for this ticker")
     return prices
 
-@app.get("/portfolios/{portfolio_id}/chart")
+@app.get("/portfolios/{portfolio_id}/chart", response_model=List[schemas.PortfolioChartPoint])
 def get_portfolio_chart(
     portfolio_id: int,
     date_from: date,
