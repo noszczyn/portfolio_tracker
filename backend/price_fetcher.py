@@ -4,9 +4,13 @@ import pandas as pd
 def _ticker_candidates(ticker: str) -> list[str]:
     symbol = ticker.strip().upper()
     candidates = [symbol]
-    # Użytkownicy często wpisują GPW jako .PL, a Yahoo używa .WA.
+    # XTB / użytkownicy często używają innych suffixów niż Yahoo.
     if symbol.endswith(".PL"):
         candidates.append(symbol[:-3] + ".WA")
+    if symbol.endswith(".US"):
+        candidates.append(symbol[:-3])
+    if symbol.endswith(".UK"):
+        candidates.append(symbol[:-3] + ".L")
     return candidates
 
 def fetch_prices(ticker: str, date_from: str, date_to: str) -> list[dict]:

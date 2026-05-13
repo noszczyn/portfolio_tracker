@@ -1,10 +1,18 @@
 import { useCallback, useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
-import { LineChart, Line, XAxis, YAxis, Tooltip, ResponsiveContainer, PieChart, Pie, Cell, CartesianGrid } from "recharts";
+import { LineChart, Line, XAxis, YAxis, Tooltip, ResponsiveContainer, PieChart, Pie, Cell, CartesianGrid, Legend } from "recharts";
 import client from "../api/client";
 
 const COLORS = ["#185FA5", "#0F6E56", "#854F0B", "#534AB7", "#993C1D", "#1A7F64"];
 const CHART_RANGES = ["1D", "1W", "1M", "3M", "YTD", "1Y", "ALL"];
+const TICKER_CURRENCY_SUFFIX = {
+    ".US": "USD",
+    ".DE": "EUR",
+    ".UK": "USD",
+    ".L": "GBP",
+    ".PL": "PLN",
+    ".WA": "PLN",
+};
 
 function formatDate(dateValue) {
     return dateValue.toISOString().slice(0, 10);
@@ -33,6 +41,14 @@ function getChartDateFrom(range, history) {
     return formatDate(start);
 }
 
+function inferDisplayCurrency(ticker, fallbackCurrency) {
+    const symbol = String(ticker || "").toUpperCase();
+    for (const [suffix, currency] of Object.entries(TICKER_CURRENCY_SUFFIX)) {
+        if (symbol.endsWith(suffix)) return currency;
+    }
+    return fallbackCurrency || "PLN";
+}
+
 function Dashboard({ onLogout }) {
     const [portfolios, setPortfolios] = useState([]);
     const [chartData, setChartData] = useState([]);
@@ -41,6 +57,9 @@ function Dashboard({ onLogout }) {
     const [loading, setLoading] = useState(false);
     const [submittingTransaction, setSubmittingTransaction] = useState(false);
     const [historyError, setHistoryError] = useState("");
+    const [importingXtb, setImportingXtb] = useState(false);
+    const [importFile, setImportFile] = useState(null);
+    const [importMessage, setImportMessage] = useState("");
     const [activeTab, setActiveTab] = useState("portfel");
     const [selectedRange, setSelectedRange] = useState("ALL");
     const [newTransaction, setNewTransaction] = useState({
@@ -169,6 +188,34 @@ function Dashboard({ onLogout }) {
         }
     }
 
+    async function handleImportXtb() {
+        if (!selectedPortfolio || !importFile) {
+            setImportMessage("Wybierz plik .xlsx do importu.");
+            return;
+        }
+
+        setImportingXtb(true);
+        setImportMessage("");
+        setHistoryError("");
+        try {
+            const formData = new FormData();
+            formData.append("file", importFile);
+            const res = await client.post(`/transactions/import/xtb?portfolio_id=${selectedPortfolio}`, formData, {
+                headers: { "Content-Type": "multipart/form-data" },
+            });
+            const { imported, skipped, errors } = res.data;
+            const errorsInfo = Array.isArray(errors) && errors.length > 0 ? ` Błędy: ${errors.length}.` : "";
+            setImportMessage(`Import zakończony. Dodano: ${imported}, pominięto: ${skipped}.${errorsInfo}`);
+            setImportFile(null);
+            await fetchPortfolioData(selectedPortfolio, selectedRange);
+        } catch (error) {
+            const detail = error?.response?.data?.detail;
+            setImportMessage(typeof detail === "string" ? detail : "Nie udało się zaimportować pliku XTB.");
+        } finally {
+            setImportingXtb(false);
+        }
+    }
+
     const positions = {};
     transactions.forEach(t => {
         if (t.type === "BUY") positions[t.ticker] = (positions[t.ticker] || 0) + t.quantity;
@@ -181,10 +228,10 @@ function Dashboard({ onLogout }) {
         (a, b) => new Date(b.executed_at) - new Date(a.executed_at)
     );
 
-    const lastValue = chartData.length > 0 ? chartData[chartData.length - 1].value : 0;
-    const firstValue = chartData.length > 0 ? chartData[0].value : 0;
-    const change = lastValue - firstValue;
-    const changePct = firstValue > 0 ? ((change / firstValue) * 100).toFixed(2) : 0;
+    const lastValue = chartData.length > 0 ? Number(chartData[chartData.length - 1].value || 0) : 0;
+    const lastInvested = chartData.length > 0 ? Number(chartData[chartData.length - 1].invested || 0) : 0;
+    const change = lastValue - lastInvested;
+    const changePct = lastInvested > 0 ? ((change / lastInvested) * 100).toFixed(2) : 0;
 
     const tabStyle = (tab) => ({
         display: "flex",
@@ -285,6 +332,7 @@ function Dashboard({ onLogout }) {
                             <div style={{ display: "flex", gap: 16 }}>
                                 {[
                                     { label: "Wartość portfela", value: `${lastValue.toLocaleString()} PLN` },
+                                        { label: "Wpłacono", value: `${lastInvested.toLocaleString()} PLN` },
                                     { label: "Zmiana", value: `${change >= 0 ? "+" : ""}${change.toFixed(2)} PLN`, color: change >= 0 ? "#4caf50" : "#f44336" },
                                     { label: "Stopa zwrotu", value: `${changePct}%`, color: change >= 0 ? "#4caf50" : "#f44336" },
                                     { label: "Pozycje", value: pieData.length },
@@ -330,8 +378,10 @@ function Dashboard({ onLogout }) {
                                             <CartesianGrid strokeDasharray="3 3" stroke="#f0f0f0" />
                                             <XAxis dataKey="date" tick={{ fontSize: 10, fill: "#888" }} interval={9} angle={-45} textAnchor="end" height={60} />
                                             <YAxis tickFormatter={v => v.toLocaleString()} tick={{ fontSize: 11, fill: "#888" }} axisLine={false} tickLine={false} width={80} />
-                                            <Tooltip formatter={v => [`${v.toLocaleString()} PLN`, "Wartość"]} contentStyle={{ borderRadius: 8, border: "none", boxShadow: "0 2px 8px rgba(0,0,0,0.1)" }} />
-                                            <Line type="monotone" dataKey="value" stroke="#185FA5" dot={false} strokeWidth={2} activeDot={{ r: 4 }} />
+                                            <Tooltip formatter={(v, n) => [`${Number(v).toLocaleString()} PLN`, n === "value" ? "Wartość" : "Wpłacono"]} contentStyle={{ borderRadius: 8, border: "none", boxShadow: "0 2px 8px rgba(0,0,0,0.1)" }} />
+                                            <Legend />
+                                            <Line type="monotone" dataKey="value" stroke="#185FA5" name="Wartość" dot={false} strokeWidth={2} activeDot={{ r: 4 }} />
+                                            <Line type="monotone" dataKey="invested" stroke="#7a8197" name="Wpłacono" dot={false} strokeWidth={2} strokeDasharray="5 5" />
                                         </LineChart>
                                     </ResponsiveContainer>
                                 )}
@@ -380,7 +430,24 @@ function Dashboard({ onLogout }) {
                     {activeTab === "zarzadzanie" && (
                         <div style={{ background: "#fcfcfd", borderRadius: 14, padding: 24, boxShadow: "0 6px 18px rgba(18, 25, 40, 0.06)" }}>
                             <h3 style={{ margin: "0 0 16px 0", fontSize: 15 }}>Historia transakcji</h3>
-                            <form onSubmit={handleAddTransaction} style={{ display: "grid", gridTemplateColumns: "96px 120px 120px 120px 120px 130px auto", gap: 8, marginBottom: 16, alignItems: "center", justifyContent: "start" }}>
+                            <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 14, flexWrap: "wrap" }}>
+                                <input
+                                    type="file"
+                                    accept=".xlsx"
+                                    onChange={(e) => setImportFile(e.target.files?.[0] || null)}
+                                    style={{ fontSize: 13 }}
+                                />
+                                <button
+                                    type="button"
+                                    onClick={handleImportXtb}
+                                    disabled={importingXtb}
+                                    style={{ padding: "7px 12px", borderRadius: 8, border: "1px solid #d8dde6", background: "#fff", color: "#25304a", cursor: "pointer", fontWeight: 600, height: 36 }}
+                                >
+                                    {importingXtb ? "Importowanie..." : "Importuj XTB (.xlsx)"}
+                                </button>
+                            </div>
+                            {importMessage && <p style={{ color: "#4a556f", marginBottom: 12 }}>{importMessage}</p>}
+                            <form onSubmit={handleAddTransaction} style={{ display: "grid", gridTemplateColumns: "96px 120px 120px 120px 120px 94px 130px auto", gap: 8, marginBottom: 16, alignItems: "center", justifyContent: "start" }}>
                                 <select
                                     value={newTransaction.type}
                                     onChange={(e) => updateNewTransaction("type", e.target.value)}
@@ -422,6 +489,17 @@ function Dashboard({ onLogout }) {
                                     placeholder="Prowizja"
                                     style={formControlStyle}
                                 />
+                                <select
+                                    value={newTransaction.currency}
+                                    onChange={(e) => updateNewTransaction("currency", e.target.value)}
+                                    style={formControlStyle}
+                                >
+                                    <option value="PLN">PLN</option>
+                                    <option value="USD">USD</option>
+                                    <option value="EUR">EUR</option>
+                                    <option value="GBP">GBP</option>
+                                    <option value="CHF">CHF</option>
+                                </select>
                                 <input
                                     type="date"
                                     value={newTransaction.executed_at}
@@ -459,20 +537,24 @@ function Dashboard({ onLogout }) {
                                             </tr>
                                         </thead>
                                         <tbody>
-                                            {historyRows.map((tx) => (
+                                            {historyRows.map((tx) => {
+                                                const displayCurrency = tx.ticker === "CASH"
+                                                    ? "PLN"
+                                                    : inferDisplayCurrency(tx.ticker, tx.currency);
+                                                return (
                                                 <tr key={tx.id} style={{ borderBottom: "1px solid #f0f2f6" }}>
                                                     <td style={{ padding: "9px 10px", color: "#25304a" }}>{new Date(tx.executed_at).toLocaleDateString("pl-PL")}</td>
                                                     <td style={{ padding: "9px 10px", fontWeight: 600, color: tx.type === "BUY" ? "#0F6E56" : "#993C1D" }}>{tx.type}</td>
                                                     <td style={{ padding: "9px 10px", color: "#25304a", fontWeight: 500 }}>{tx.ticker}</td>
                                                     <td style={{ padding: "9px 10px", textAlign: "right", color: "#25304a" }}>{Number(tx.quantity).toLocaleString()}</td>
                                                     <td style={{ padding: "9px 10px", textAlign: "right", color: "#25304a" }}>
-                                                        {Number(tx.price).toLocaleString()} {tx.currency}
+                                                        {Number(tx.price).toLocaleString()} {displayCurrency}
                                                     </td>
                                                     <td style={{ padding: "9px 10px", textAlign: "right", color: "#25304a" }}>
-                                                        {Number(tx.commission).toLocaleString()} {tx.currency}
+                                                        {Number(tx.commission).toLocaleString()} {displayCurrency}
                                                     </td>
                                                     <td style={{ padding: "9px 10px", textAlign: "right", color: "#25304a", fontWeight: 600 }}>
-                                                        {(Number(tx.price) * Number(tx.quantity) + Number(tx.commission)).toLocaleString()} {tx.currency}
+                                                        {(Number(tx.price) * Number(tx.quantity) + Number(tx.commission)).toLocaleString()} {displayCurrency}
                                                     </td>
                                                     <td style={{ padding: "9px 10px", textAlign: "right" }}>
                                                         <button
@@ -483,7 +565,8 @@ function Dashboard({ onLogout }) {
                                                         </button>
                                                     </td>
                                                 </tr>
-                                            ))}
+                                                );
+                                            })}
                                         </tbody>
                                     </table>
                                 </div>

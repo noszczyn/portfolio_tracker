@@ -73,3 +73,10 @@ class PriceResponse(BaseModel):
 class PortfolioChartPoint(BaseModel):
     date: str
     value: float
+    invested: float | None = None
+
+
+class ImportSummary(BaseModel):
+    imported: int
+    skipped: int
+    errors: list[str]
