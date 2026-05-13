@@ -5,11 +5,12 @@ from io import BytesIO
 import pandas as pd
 import yfinance as yf
 
+FX_CONVERSION_FEE_PCT = 0.01
+
 
 SUPPORTED_TYPES = {
     "stock purchase": "BUY",
     "stock sale": "SELL",
-    "close trade": "SELL",
 }
 
 SYMBOL_CURRENCY_SUFFIX = {
@@ -207,14 +208,23 @@ def parse_xtb_transactions(file_bytes: bytes) -> tuple[list[dict], list[str]]:
         raw_diff = max(trade_value - (quantity * price), 0.0)
         # Jeśli różnica jest duża, to zwykle efekt konwersji walut / formatu XTB,
         # a nie realna prowizja transakcyjna.
-        commission = raw_diff if raw_diff <= max(5.0, 0.05 * max(trade_value, 1.0)) else 0.0
-        commission = round(commission, 6)
+        base_commission = raw_diff if raw_diff <= max(5.0, 0.05 * max(trade_value, 1.0)) else 0.0
+
+        tx_type = SUPPORTED_TYPES[type_raw]
+        instrument_currency = _infer_currency_from_instrument(symbol, account_currency, currency_cache)
+        fx_conversion_fee = 0.0
+        # Dodatkowa opłata za przewalutowanie zgodnie z założeniem:
+        # konto PLN + zakup instrumentu USD => 0.5% wartości transakcji.
+        if account_currency == "PLN" and tx_type == "BUY" and instrument_currency == "USD":
+            fx_conversion_fee = trade_value * FX_CONVERSION_FEE_PCT
+
+        commission = round(base_commission + fx_conversion_fee, 6)
 
         account_unit_price = trade_value / quantity if quantity > 0 else price
 
         parsed.append(
             {
-                "type": SUPPORTED_TYPES[type_raw],
+                "type": tx_type,
                 "ticker": symbol,
                 "quantity": round(abs(quantity), 6),
                 # Dla poprawnego salda gotówki używamy jednostkowej ceny w walucie konta.

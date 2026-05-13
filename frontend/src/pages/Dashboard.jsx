@@ -1,21 +1,42 @@
 import { useCallback, useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
-import { LineChart, Line, XAxis, YAxis, Tooltip, ResponsiveContainer, PieChart, Pie, Cell, CartesianGrid, Legend } from "recharts";
+import { LineChart, Line, XAxis, YAxis, Tooltip, ResponsiveContainer, PieChart, Pie, Cell } from "recharts";
 import client from "../api/client";
 
 const COLORS = ["#185FA5", "#0F6E56", "#854F0B", "#534AB7", "#993C1D", "#1A7F64"];
 const CHART_RANGES = ["1D", "1W", "1M", "3M", "YTD", "1Y", "ALL"];
-const TICKER_CURRENCY_SUFFIX = {
-    ".US": "USD",
-    ".DE": "EUR",
-    ".UK": "USD",
-    ".L": "GBP",
-    ".PL": "PLN",
-    ".WA": "PLN",
-};
 
 function formatDate(dateValue) {
     return dateValue.toISOString().slice(0, 10);
+}
+
+function formatChartLabel(value, range) {
+    const date = new Date(value);
+    if (Number.isNaN(date.getTime())) return String(value);
+
+    const hasTimePart = String(value).includes("T");
+    if (range === "1D") {
+        if (hasTimePart) return date.toLocaleTimeString("pl-PL", { hour: "2-digit", minute: "2-digit" });
+        return date.toLocaleDateString("pl-PL", { day: "2-digit", month: "2-digit" });
+    }
+    if (range === "1W") {
+        if (hasTimePart) return date.toLocaleString("pl-PL", { weekday: "short", hour: "2-digit" });
+        return date.toLocaleDateString("pl-PL", { weekday: "short", day: "2-digit", month: "2-digit" });
+    }
+    if (range === "1M" || range === "3M") {
+        return date.toLocaleDateString("pl-PL", { day: "2-digit", month: "2-digit" });
+    }
+    return date.toLocaleDateString("pl-PL", { day: "2-digit", month: "2-digit", year: "2-digit" });
+}
+
+function getTickStepByRange(range, pointsCount) {
+    const safeCount = Math.max(pointsCount, 1);
+    if (range === "1D") return Math.max(Math.floor(safeCount / 6), 1);
+    if (range === "1W") return Math.max(Math.floor(safeCount / 7), 1);
+    if (range === "1M") return Math.max(Math.floor(safeCount / 8), 1);
+    if (range === "3M") return Math.max(Math.floor(safeCount / 9), 1);
+    if (range === "YTD" || range === "1Y") return Math.max(Math.floor(safeCount / 10), 1);
+    return Math.max(Math.floor(safeCount / 12), 1);
 }
 
 function getChartDateFrom(range, history) {
@@ -41,27 +62,25 @@ function getChartDateFrom(range, history) {
     return formatDate(start);
 }
 
-function inferDisplayCurrency(ticker, fallbackCurrency) {
-    const symbol = String(ticker || "").toUpperCase();
-    for (const [suffix, currency] of Object.entries(TICKER_CURRENCY_SUFFIX)) {
-        if (symbol.endsWith(suffix)) return currency;
-    }
-    return fallbackCurrency || "PLN";
-}
-
 function Dashboard({ onLogout }) {
     const [portfolios, setPortfolios] = useState([]);
     const [chartData, setChartData] = useState([]);
     const [transactions, setTransactions] = useState([]);
     const [selectedPortfolio, setSelectedPortfolio] = useState(null);
     const [loading, setLoading] = useState(false);
+    const [refreshing, setRefreshing] = useState(false);
     const [submittingTransaction, setSubmittingTransaction] = useState(false);
     const [historyError, setHistoryError] = useState("");
     const [importingXtb, setImportingXtb] = useState(false);
     const [importFile, setImportFile] = useState(null);
     const [importMessage, setImportMessage] = useState("");
+    const [summaryData, setSummaryData] = useState({
+        total_value_pln: 0,
+        total_pnl_pln: 0,
+        items: [],
+    });
     const [activeTab, setActiveTab] = useState("portfel");
-    const [selectedRange, setSelectedRange] = useState("ALL");
+    const [selectedRange, setSelectedRange] = useState("1W");
     const [newTransaction, setNewTransaction] = useState({
         type: "BUY",
         ticker: "",
@@ -73,20 +92,32 @@ function Dashboard({ onLogout }) {
     });
     const navigate = useNavigate();
 
-    const fetchPortfolioData = useCallback(async (portfolioId, range) => {
-        setLoading(true);
+    const fetchPortfolioData = useCallback(async (portfolioId, range, showLoader = true) => {
+        if (showLoader) {
+            setLoading(true);
+        } else {
+            setRefreshing(true);
+        }
         setHistoryError("");
         try {
-            const txRes = await client.get(`/portfolios/${portfolioId}/history`);
+            const [txRes, summaryRes] = await Promise.all([
+                client.get(`/portfolios/${portfolioId}/history`),
+                client.get(`/portfolios/${portfolioId}/summary`),
+            ]);
             const dateTo = formatDate(new Date());
             const dateFrom = getChartDateFrom(range, txRes.data);
             const chartRes = await client.get(`/portfolios/${portfolioId}/chart?date_from=${dateFrom}&date_to=${dateTo}`);
             setChartData(chartRes.data);
             setTransactions(txRes.data);
+            setSummaryData(summaryRes.data);
         } catch {
             setHistoryError("Nie udało się pobrać danych portfela.");
         } finally {
-            setLoading(false);
+            if (showLoader) {
+                setLoading(false);
+            } else {
+                setRefreshing(false);
+            }
         }
     }, []);
 
@@ -97,7 +128,7 @@ function Dashboard({ onLogout }) {
                 if (res.data.length > 0) {
                     const initialPortfolioId = String(res.data[0].id);
                     setSelectedPortfolio(initialPortfolioId);
-                    fetchPortfolioData(initialPortfolioId, "ALL");
+                    fetchPortfolioData(initialPortfolioId, "1W", true);
                 }
             })
             .catch(() => navigate("/login"));
@@ -105,13 +136,18 @@ function Dashboard({ onLogout }) {
 
     function handlePortfolioChange(portfolioId) {
         setSelectedPortfolio(portfolioId);
-        fetchPortfolioData(portfolioId, selectedRange);
+        fetchPortfolioData(portfolioId, selectedRange, true);
     }
 
     function handleRangeChange(range) {
         setSelectedRange(range);
         if (!selectedPortfolio) return;
-        fetchPortfolioData(selectedPortfolio, range);
+        fetchPortfolioData(selectedPortfolio, range, false);
+    }
+
+    function handleManualRefresh() {
+        if (!selectedPortfolio) return;
+        fetchPortfolioData(selectedPortfolio, selectedRange, false);
     }
 
     function handleLogout() {
@@ -169,7 +205,7 @@ function Dashboard({ onLogout }) {
                 price: "",
                 commission: "",
             }));
-            await fetchPortfolioData(selectedPortfolio, selectedRange);
+            await fetchPortfolioData(selectedPortfolio, selectedRange, false);
         } catch {
             setHistoryError("Nie udało się dodać transakcji. Sprawdź dane formularza.");
         } finally {
@@ -182,7 +218,7 @@ function Dashboard({ onLogout }) {
         setHistoryError("");
         try {
             await client.delete(`/transactions/${transactionId}`);
-            await fetchPortfolioData(selectedPortfolio, selectedRange);
+            await fetchPortfolioData(selectedPortfolio, selectedRange, false);
         } catch {
             setHistoryError("Nie udało się usunąć transakcji.");
         }
@@ -207,7 +243,7 @@ function Dashboard({ onLogout }) {
             const errorsInfo = Array.isArray(errors) && errors.length > 0 ? ` Błędy: ${errors.length}.` : "";
             setImportMessage(`Import zakończony. Dodano: ${imported}, pominięto: ${skipped}.${errorsInfo}`);
             setImportFile(null);
-            await fetchPortfolioData(selectedPortfolio, selectedRange);
+            await fetchPortfolioData(selectedPortfolio, selectedRange, false);
         } catch (error) {
             const detail = error?.response?.data?.detail;
             setImportMessage(typeof detail === "string" ? detail : "Nie udało się zaimportować pliku XTB.");
@@ -228,10 +264,24 @@ function Dashboard({ onLogout }) {
         (a, b) => new Date(b.executed_at) - new Date(a.executed_at)
     );
 
+    const summaryRows = summaryData.items || [];
+
     const lastValue = chartData.length > 0 ? Number(chartData[chartData.length - 1].value || 0) : 0;
     const lastInvested = chartData.length > 0 ? Number(chartData[chartData.length - 1].invested || 0) : 0;
     const change = lastValue - lastInvested;
     const changePct = lastInvested > 0 ? ((change / lastInvested) * 100).toFixed(2) : 0;
+    const firstRangeValue = chartData.length > 0 ? Number(chartData[0].value || 0) : 0;
+    const firstRangeInvested = chartData.length > 0 ? Number(chartData[0].invested || 0) : 0;
+    const investedDeltaInRange = lastInvested - firstRangeInvested;
+    const rangeChange = selectedRange === "ALL"
+        ? (lastValue - lastInvested)
+        : ((lastValue - firstRangeValue) - investedDeltaInRange);
+    const nonAllBase = firstRangeValue + Math.max(investedDeltaInRange, 0);
+    const rangeChangePct = selectedRange === "ALL"
+        ? (lastInvested > 0 ? (rangeChange / lastInvested) * 100 : 0)
+        : (nonAllBase > 0 ? (rangeChange / nonAllBase) * 100 : 0);
+    const robinhoodLineColor = rangeChange >= 0 ? "#0BAA37" : "#D13B3B";
+    const xAxisTickStep = getTickStepByRange(selectedRange, chartData.length);
 
     const tabStyle = (tab) => ({
         display: "flex",
@@ -282,6 +332,10 @@ function Dashboard({ onLogout }) {
                     Portfel
                 </button>
 
+                <button style={tabStyle("summary")} onClick={() => setActiveTab("summary")}>
+                    Podsumowanie
+                </button>
+
                 <button style={tabStyle("zarzadzanie")} onClick={() => setActiveTab("zarzadzanie")}>
                     Zarządzanie
                 </button>
@@ -306,6 +360,16 @@ function Dashboard({ onLogout }) {
                     </div>
 
                     <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                        {selectedPortfolio && (
+                            <button
+                                type="button"
+                                onClick={handleManualRefresh}
+                                disabled={refreshing}
+                                style={{ padding: "6px 14px", borderRadius: 8, border: "1px solid #d8dde6", background: "#fdfdfe", cursor: refreshing ? "default" : "pointer", fontSize: 13, fontWeight: 600, color: "#25304a" }}
+                            >
+                                {refreshing ? "Odświeżanie..." : "Odśwież dane"}
+                            </button>
+                        )}
                         <button
                             onClick={() => setActiveTab("ustawienia")}
                             style={{ padding: "6px 14px", borderRadius: 8, border: "1px solid #d8dde6", background: "#fdfdfe", cursor: "pointer", fontSize: 13, display: "flex", alignItems: "center", gap: 6 }}
@@ -347,8 +411,17 @@ function Dashboard({ onLogout }) {
                             {/* WYKRES */}
                             <div style={{ background: "#fcfcfd", borderRadius: 14, padding: 24, boxShadow: "0 6px 18px rgba(18, 25, 40, 0.06)" }}>
                                 <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 12, marginBottom: 16 }}>
-                                    <h3 style={{ margin: 0, fontSize: 15 }}>Wartość portfela</h3>
-                                    <div style={{ display: "flex", gap: 6, flexWrap: "wrap", justifyContent: "flex-end" }}>
+                                    <div>
+                                        <h3 style={{ margin: 0, fontSize: 15 }}>Portfolio</h3>
+                                        <div style={{ marginTop: 8, fontSize: 44, fontWeight: 700, lineHeight: 1, color: "#101828" }}>
+                                            {lastValue.toLocaleString(undefined, { maximumFractionDigits: 2 })} PLN
+                                        </div>
+                                        <div style={{ marginTop: 8, fontSize: 15, color: rangeChange >= 0 ? "#0BAA37" : "#D13B3B", fontWeight: 600 }}>
+                                            {rangeChange >= 0 ? "+" : ""}{rangeChange.toLocaleString(undefined, { maximumFractionDigits: 2 })} PLN ({rangeChangePct.toLocaleString(undefined, { maximumFractionDigits: 2 })}%)
+                                            <span style={{ color: "#667085", fontWeight: 500 }}> {selectedRange}</span>
+                                        </div>
+                                    </div>
+                                    <div style={{ display: "flex", gap: 8, flexWrap: "wrap", justifyContent: "flex-end", alignItems: "center" }}>
                                         {CHART_RANGES.map((range) => (
                                             <button
                                                 key={range}
@@ -356,9 +429,9 @@ function Dashboard({ onLogout }) {
                                                 style={{
                                                     border: "none",
                                                     background: "transparent",
-                                                    color: selectedRange === range ? "#185FA5" : "#6c748b",
-                                                    borderBottom: selectedRange === range ? "2px solid #185FA5" : "2px solid transparent",
-                                                    fontSize: 12,
+                                                    color: selectedRange === range ? "#101828" : "#6c748b",
+                                                    borderBottom: selectedRange === range ? "2px solid #0BAA37" : "2px solid transparent",
+                                                    fontSize: 13,
                                                     fontWeight: selectedRange === range ? 700 : 600,
                                                     cursor: "pointer",
                                                     padding: "3px 2px",
@@ -371,17 +444,36 @@ function Dashboard({ onLogout }) {
                                     </div>
                                 </div>
                                 {loading && <p style={{ color: "#888" }}>Ładowanie...</p>}
+                                {!loading && refreshing && <p style={{ color: "#7a8197", fontSize: 12, marginBottom: 8 }}>Odświeżanie danych...</p>}
                                 {!loading && chartData.length === 0 && <p style={{ color: "#888" }}>Brak danych — dodaj transakcje.</p>}
                                 {!loading && chartData.length > 0 && (
                                     <ResponsiveContainer width="100%" height={300}>
-                                        <LineChart data={chartData} margin={{ top: 10, right: 20, bottom: 60, left: 20 }}>
-                                            <CartesianGrid strokeDasharray="3 3" stroke="#f0f0f0" />
-                                            <XAxis dataKey="date" tick={{ fontSize: 10, fill: "#888" }} interval={9} angle={-45} textAnchor="end" height={60} />
-                                            <YAxis tickFormatter={v => v.toLocaleString()} tick={{ fontSize: 11, fill: "#888" }} axisLine={false} tickLine={false} width={80} />
-                                            <Tooltip formatter={(v, n) => [`${Number(v).toLocaleString()} PLN`, n === "value" ? "Wartość" : "Wpłacono"]} contentStyle={{ borderRadius: 8, border: "none", boxShadow: "0 2px 8px rgba(0,0,0,0.1)" }} />
-                                            <Legend />
-                                            <Line type="monotone" dataKey="value" stroke="#185FA5" name="Wartość" dot={false} strokeWidth={2} activeDot={{ r: 4 }} />
-                                            <Line type="monotone" dataKey="invested" stroke="#7a8197" name="Wpłacono" dot={false} strokeWidth={2} strokeDasharray="5 5" />
+                                        <LineChart data={chartData} margin={{ top: 10, right: 8, bottom: 36, left: 8 }}>
+                                            <XAxis
+                                                dataKey="date"
+                                                axisLine={false}
+                                                tickLine={false}
+                                                tick={{ fontSize: 11, fill: "#667085", fontWeight: 600 }}
+                                                tickFormatter={(value) => formatChartLabel(value, selectedRange)}
+                                                interval={xAxisTickStep}
+                                                minTickGap={22}
+                                            />
+                                            <YAxis hide domain={["auto", "auto"]} />
+                                            <Tooltip
+                                                formatter={(v) => [`${Number(v).toLocaleString(undefined, { maximumFractionDigits: 2 })} PLN`, "Wartość portfela"]}
+                                                labelFormatter={(label) => formatChartLabel(label, selectedRange)}
+                                                contentStyle={{ borderRadius: 10, border: "1px solid #e4e7ec", boxShadow: "0 8px 24px rgba(16,24,40,0.12)" }}
+                                            />
+                                            <Line
+                                                type="monotone"
+                                                dataKey="value"
+                                                stroke={robinhoodLineColor}
+                                                dot={false}
+                                                strokeWidth={2.6}
+                                                isAnimationActive
+                                                animationDuration={420}
+                                                activeDot={{ r: 4, fill: robinhoodLineColor, stroke: "#fff", strokeWidth: 2 }}
+                                            />
                                         </LineChart>
                                     </ResponsiveContainer>
                                 )}
@@ -424,6 +516,71 @@ function Dashboard({ onLogout }) {
                                 </div>
                             </div>
                         </>
+                    )}
+
+                    {/* TAB: ZARZĄDZANIE */}
+                    {activeTab === "summary" && (
+                        <div style={{ background: "#fcfcfd", borderRadius: 14, padding: 24, boxShadow: "0 6px 18px rgba(18, 25, 40, 0.06)" }}>
+                            <h3 style={{ margin: "0 0 16px 0", fontSize: 15 }}>Podsumowanie portfela</h3>
+                            {summaryRows.length === 0 && (
+                                <p style={{ color: "#888" }}>Brak pozycji do podsumowania.</p>
+                            )}
+                            {summaryRows.length > 0 && (
+                                <div style={{ overflowX: "auto" }}>
+                                    <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 13, minWidth: 980 }}>
+                                        <thead>
+                                            <tr style={{ borderBottom: "1px solid #e8ebf0" }}>
+                                                <th style={{ textAlign: "left", padding: "8px 10px", color: "#7a8197", fontWeight: 600 }}>Walor</th>
+                                                <th style={{ textAlign: "right", padding: "8px 10px", color: "#7a8197", fontWeight: 600 }}>Liczba jednostek</th>
+                                                <th style={{ textAlign: "right", padding: "8px 10px", color: "#7a8197", fontWeight: 600 }}>Śr. cena zakupu (PLN)</th>
+                                                <th style={{ textAlign: "right", padding: "8px 10px", color: "#7a8197", fontWeight: 600 }}>Cena aktualna* (PLN)</th>
+                                                <th style={{ textAlign: "right", padding: "8px 10px", color: "#7a8197", fontWeight: 600 }}>Wartość waloru (PLN)</th>
+                                                <th style={{ textAlign: "right", padding: "8px 10px", color: "#7a8197", fontWeight: 600 }}>Udział w portfelu (%)</th>
+                                                <th style={{ textAlign: "right", padding: "8px 10px", color: "#7a8197", fontWeight: 600 }}>Stopa zwrotu (%)</th>
+                                                <th style={{ textAlign: "right", padding: "8px 10px", color: "#7a8197", fontWeight: 600 }}>Zysk (PLN)</th>
+                                            </tr>
+                                        </thead>
+                                        <tbody>
+                                            {summaryRows.map((row) => {
+                                                return (
+                                                    <tr key={row.ticker} style={{ borderBottom: "1px solid #f0f2f6" }}>
+                                                        <td style={{ padding: "9px 10px", color: "#25304a", fontWeight: 600 }}>{row.ticker}</td>
+                                                        <td style={{ padding: "9px 10px", textAlign: "right", color: "#25304a" }}>{Number(row.quantity).toLocaleString()}</td>
+                                                        <td style={{ padding: "9px 10px", textAlign: "right", color: "#25304a" }}>{Number(row.avg_buy_price_pln).toLocaleString(undefined, { maximumFractionDigits: 2 })}</td>
+                                                        <td style={{ padding: "9px 10px", textAlign: "right", color: "#25304a" }}>{Number(row.current_price_pln).toLocaleString(undefined, { maximumFractionDigits: 2 })}</td>
+                                                        <td style={{ padding: "9px 10px", textAlign: "right", color: "#25304a", fontWeight: 600 }}>{Number(row.market_value_pln).toLocaleString(undefined, { maximumFractionDigits: 2 })}</td>
+                                                        <td style={{ padding: "9px 10px", textAlign: "right", color: "#25304a" }}>{Number(row.share_pct).toLocaleString(undefined, { maximumFractionDigits: 2 })}</td>
+                                                        <td style={{ padding: "9px 10px", textAlign: "right", color: Number(row.return_pct) >= 0 ? "#0F6E56" : "#993C1D", fontWeight: 600 }}>
+                                                            {Number(row.return_pct).toLocaleString(undefined, { maximumFractionDigits: 2 })}
+                                                        </td>
+                                                        <td style={{ padding: "9px 10px", textAlign: "right", color: Number(row.pnl_pln) >= 0 ? "#0F6E56" : "#993C1D", fontWeight: 700 }}>
+                                                            {Number(row.pnl_pln).toLocaleString(undefined, { maximumFractionDigits: 2 })}
+                                                        </td>
+                                                    </tr>
+                                                );
+                                            })}
+                                            <tr style={{ borderTop: "2px solid #d8dde6", background: "#fafbfc" }}>
+                                                <td style={{ padding: "9px 10px", color: "#25304a", fontWeight: 700 }}>Razem</td>
+                                                <td style={{ padding: "9px 10px" }} />
+                                                <td style={{ padding: "9px 10px" }} />
+                                                <td style={{ padding: "9px 10px" }} />
+                                                <td style={{ padding: "9px 10px", textAlign: "right", color: "#25304a", fontWeight: 800 }}>
+                                                    {Number(summaryData.total_value_pln || 0).toLocaleString(undefined, { maximumFractionDigits: 2 })}
+                                                </td>
+                                                <td style={{ padding: "9px 10px", textAlign: "right", color: "#25304a", fontWeight: 700 }}>100.00</td>
+                                                <td style={{ padding: "9px 10px" }} />
+                                                <td style={{ padding: "9px 10px", textAlign: "right", color: "#25304a", fontWeight: 800 }}>
+                                                    {Number(summaryData.total_pnl_pln || 0).toLocaleString(undefined, { maximumFractionDigits: 2 })}
+                                                </td>
+                                            </tr>
+                                        </tbody>
+                                    </table>
+                                    <p style={{ marginTop: 8, fontSize: 11, color: "#7a8197" }}>
+                                        * Cena aktualna = ostatnia dostępna cena rynkowa przeliczona na PLN.
+                                    </p>
+                                </div>
+                            )}
+                        </div>
                     )}
 
                     {/* TAB: ZARZĄDZANIE */}
@@ -538,9 +695,7 @@ function Dashboard({ onLogout }) {
                                         </thead>
                                         <tbody>
                                             {historyRows.map((tx) => {
-                                                const displayCurrency = tx.ticker === "CASH"
-                                                    ? "PLN"
-                                                    : inferDisplayCurrency(tx.ticker, tx.currency);
+                                                const displayCurrency = tx.currency || "PLN";
                                                 return (
                                                 <tr key={tx.id} style={{ borderBottom: "1px solid #f0f2f6" }}>
                                                     <td style={{ padding: "9px 10px", color: "#25304a" }}>{new Date(tx.executed_at).toLocaleDateString("pl-PL")}</td>

@@ -80,3 +80,20 @@ class ImportSummary(BaseModel):
     imported: int
     skipped: int
     errors: list[str]
+
+
+class PortfolioSummaryItem(BaseModel):
+    ticker: str
+    quantity: float
+    avg_buy_price_pln: float
+    current_price_pln: float
+    market_value_pln: float
+    share_pct: float
+    return_pct: float
+    pnl_pln: float
+
+
+class PortfolioSummaryResponse(BaseModel):
+    total_value_pln: float
+    total_pnl_pln: float
+    items: list[PortfolioSummaryItem]

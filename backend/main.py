@@ -8,7 +8,7 @@ from typing import List
 from models.portfolio import Portfolio
 from models.transaction import Transaction
 from price_fetcher import fetch_prices
-from portfolio_value import get_portfolio_value_history
+from portfolio_value import get_portfolio_value_history, get_portfolio_summary
 from datetime import date
 from database import get_db
 from models.user import User
@@ -350,3 +350,19 @@ def get_portfolio_chart(
         raise HTTPException(status_code=403, detail="Not your portfolio")
 
     return get_portfolio_value_history(portfolio_id, date_from, date_to, db)
+
+
+@app.get("/portfolios/{portfolio_id}/summary", response_model=schemas.PortfolioSummaryResponse)
+def get_portfolio_summary_endpoint(
+    portfolio_id: int,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
+    portfolio = db.query(Portfolio).filter(
+        Portfolio.id == portfolio_id,
+        Portfolio.user_id == current_user.id
+    ).first()
+    if not portfolio:
+        raise HTTPException(status_code=403, detail="Not your portfolio")
+
+    return get_portfolio_summary(portfolio_id, db)
